@@ -20,62 +20,62 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True 
 ) 
 
-def chunk_files(lst, n):
+def chunk_list(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
 if uploaded_files: 
-    num_files = len(uploaded_files)
-    st.info(f"{num_files} file(s) selected. This will create {-(-num_files // 4)} page(s).") 
-
     if st.button("Process All Labels"): 
         processed_pdfs = [] 
+        all_label_images = []
         
         try: 
-            with st.spinner("Processing labels into pages..."): 
-                file_chunks = list(chunk_files(uploaded_files, 4))
-                
-                for page_num, chunk in enumerate(file_chunks):
-                    canvas = Image.new('RGB', PAGE_SIZE, 'white') 
+            with st.spinner("Extracting all pages..."): 
+                for file_item in uploaded_files:
+                    file_item.seek(0)
+                    file_bytes = file_item.read()
+                    images = convert_from_bytes(file_bytes, dpi=DPI)
+                    all_label_images.extend(images)
+
+            if all_label_images:
+                with st.spinner(f"Arranging {len(all_label_images)} labels into pages..."):
+                    image_chunks = list(chunk_list(all_label_images, 4))
                     
-                    for i, file_item in enumerate(chunk): 
-                        file_item.seek(0)
-                        file_bytes = file_item.read() 
-                        images = convert_from_bytes(file_bytes, dpi=DPI) 
+                    for chunk in image_chunks:
+                        canvas = Image.new('RGB', PAGE_SIZE, 'white') 
                         
-                        if not images: 
-                            continue 
+                        for i, img in enumerate(chunk): 
+                            new_size = (int(img.width * SCALE), int(img.height * SCALE)) 
+                            img = img.resize(new_size, Image.Resampling.LANCZOS) 
                             
-                        img = images[0] 
-                        new_size = (int(img.width * SCALE), int(img.height * SCALE)) 
-                        img = img.resize(new_size, Image.Resampling.LANCZOS) 
-                        
-                        w, h = img.size 
+                            w, h = img.size 
 
-                        if i == 0: 
-                            pos = (MID_X - w - CENTER_GAP, MID_Y - h - CENTER_GAP) 
-                        elif i == 1: 
-                            pos = (MID_X + CENTER_GAP, MID_Y - h - CENTER_GAP) 
-                        elif i == 2: 
-                            pos = (MID_X - w - CENTER_GAP, MID_Y + CENTER_GAP) 
-                        elif i == 3: 
-                            pos = (MID_X + CENTER_GAP, MID_Y + CENTER_GAP) 
+                            if i == 0: 
+                                pos = (MID_X - w - CENTER_GAP, MID_Y - h - CENTER_GAP) 
+                            elif i == 1: 
+                                pos = (MID_X + CENTER_GAP, MID_Y - h - CENTER_GAP) 
+                            elif i == 2: 
+                                pos = (MID_X - w - CENTER_GAP, MID_Y + CENTER_GAP) 
+                            elif i == 3: 
+                                pos = (MID_X + CENTER_GAP, MID_Y + CENTER_GAP) 
 
-                        canvas.paste(img, pos) 
+                            canvas.paste(img, pos) 
 
-                    pdf_buffer = io.BytesIO() 
-                    canvas.save(pdf_buffer, format="PDF", resolution=DPI) 
-                    processed_pdfs.append(pdf_buffer.getvalue())
+                        pdf_buffer = io.BytesIO() 
+                        canvas.save(pdf_buffer, format="PDF", resolution=DPI) 
+                        processed_pdfs.append(pdf_buffer.getvalue())
 
-                st.session_state['ready_pdfs'] = processed_pdfs
-                st.balloons()
+                    st.session_state['ready_pdfs'] = processed_pdfs
+                    st.balloons()
+            else:
+                st.warning("No pages found in the uploaded files.")
 
         except Exception as e: 
             st.error(f"An error occurred: {e}") 
 
     if 'ready_pdfs' in st.session_state:
         st.write("---")
-        st.subheader("Download Your Pages")
+        st.subheader(f"Download Your Pages ({len(st.session_state['ready_pdfs'])} total)")
         
         cols = st.columns(2)
         for idx, pdf_bytes in enumerate(st.session_state['ready_pdfs']):
